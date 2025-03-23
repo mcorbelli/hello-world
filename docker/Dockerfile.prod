@@ -1,0 +1,102 @@
+# BUG: https://stackoverflow.com/questions/73398714/docker-fails-when-building-on-m1-macs-exec-usr-local-bin-docker-entrypoint-sh
+
+ARG NODEJS_VERSION 22
+
+FROM node:${NODEJS_VERSION}-alpine AS base
+
+# Step 1: Install dependencies only when needed
+# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine
+# to understand why libc6-compat might be needed.
+
+FROM base AS deps
+
+# Install libc6-compat to ensure compatibility with certain packages requiring it.
+
+RUN apk add --no-cache libc6-compat
+
+WORKDIR /app
+
+# Copy package manager lock files and configuration
+
+COPY package.json pnpm-lock.yaml* .npmrc* ./
+
+# Install dependencies using the package manager defined in the project
+
+RUN npm i -g corepack && pnpm install --frozen-lockfile
+
+# Step 2: Build the source code only when necessary
+
+FROM base AS builder
+
+WORKDIR /app
+
+# Copy the 'node_modules' from the 'deps' stage to the current working directory
+
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy the rest of the application files into the container
+
+COPY . .
+
+# Next.js collects completely anonymous telemetry data about general usage.
+# Learn more here: https://nextjs.org/telemetry
+# Uncomment the following line in case you want to disable telemetry during the build.
+
+ENV NEXT_TELEMETRY_DISABLED 1
+
+# Set the NODE_ENV environment variable to "production".
+# This value is recognized by Next.js to optimize the build and runtime environment.
+# Supported values include "production", "development", and "test".
+# For more details, see: https://nextjs.org/docs/messages/non-standard-node-env
+
+ENV NODE_ENV production
+
+# Ensure Prisma client is generated before the build process starts
+
+RUN npx prisma generate
+
+# Builds the application using the package manager defined in the project
+
+RUN npm i -g corepack && pnpm build
+
+# Step 3. Production image, copy all the files and run next
+
+FROM base AS runner
+
+WORKDIR /app
+
+# Next.js collects completely anonymous telemetry data about general usage.
+# Learn more here: https://nextjs.org/telemetry
+# Uncomment the following line to disable telemetry at runtime.
+
+ENV NEXT_TELEMETRY_DISABLED 1
+
+# Configure Auth.js to trust the host for authentication
+# For more details: https://authjs.dev/getting-started/deployment#auth_trust_host
+
+ENV AUTH_TRUST_HOST true
+
+# Create a user and group to run the application with a non-root user
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Switch to the 'nextjs' user to avoid running as root
+
+USER nextjs
+
+# Copy the 'public' directory from the 'builder' stage to the production image
+
+COPY --from=builder /app/public ./public
+
+# Automatically leverage output traces to reduce image size
+# https://nextjs.org/docs/advanced-features/output-file-tracing
+
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Note: Don't expose ports here, Compose will handle that for us
+
+# Start the application with the generated Prisma schema and the Node.js server
+
+CMD ["node", "server.js"]

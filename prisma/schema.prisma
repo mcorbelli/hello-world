@@ -1,0 +1,182 @@
+generator client {
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "linux-musl"]
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String    @id @default(uuid())
+  name             String
+  email            String
+  emailVerified    Boolean   @default(false)
+  image            String?
+  twoFactorEnabled Boolean?
+  role             String?
+  banned           Boolean?
+  banReason        String?
+  banExpires       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  sessions   Session[]
+  accounts   Account[]
+  twofactors TwoFactor[]
+  passkeys   Passkey[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id             String   @id @default(uuid())
+  expiresAt      DateTime
+  token          String
+  ipAddress      String?
+  userAgent      String?
+  impersonatedBy String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([token])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(uuid())
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+model TwoFactor {
+  id          String @id @default(uuid())
+  secret      String
+  backupCodes String
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@map("twoFactor")
+}
+
+model Passkey {
+  id           String   @id @default(uuid())
+  name         String?
+  publicKey    String
+  credentialID String
+  counter      Int
+  deviceType   String
+  backedUp     Boolean
+  transports   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([credentialID])
+  @@map("passkey")
+}
+
+model AuthConfig {
+  id                             String   @id @default(uuid())
+  sendEmailVerificationOnSignUp  Boolean  @default(true)
+  autoSignInAfterVerification    Boolean  @default(true)
+  emailPasswordEnabled           Boolean  @default(true)
+  requireEmailVerification       Boolean  @default(true)
+  changeUserEmailEnabled         Boolean  @default(true)
+  deleteUserEnabled              Boolean  @default(true)
+  accountLinkingEnabled          Boolean  @default(true)
+  allowDifferentLinkedEmails     Boolean  @default(false)
+  emailAndPasswordSignUpDisabled Boolean  @default(false)
+  sessionExpiresIn               Int?
+  sessionUpdateAge               Int?
+  sessionFreshAge                Int?
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
+
+  @@map("auth_config")
+}
+
+enum OAuthProviderType {
+  GOOGLE
+  GITHUB
+  FACEBOOK
+  APPLE
+}
+
+model OAuthProvider {
+  id        String            @id @default(uuid())
+  type      OAuthProviderType
+  name      String
+  enabled   Boolean           @default(false)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  iconId String
+  icon   Icon   @relation(fields: [iconId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  oAuthCredentials OAuthCredentials[]
+
+  @@unique([type])
+  @@map("oauth_provider")
+}
+
+model OAuthCredentials {
+  id           String   @id @default(uuid())
+  clientId     String
+  clientSecret String
+  enabled      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  oAuthProviderId String
+  oAuthProvider   OAuthProvider @relation(fields: [oAuthProviderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([clientId])
+  @@map("oauth_credentials")
+}
+
+model Icon {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  oAuthProviders OAuthProvider[]
+
+  @@unique([name])
+  @@map("icon")
+}

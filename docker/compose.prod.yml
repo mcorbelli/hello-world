@@ -1,0 +1,18 @@
+name: nextjs-hello-world
+
+services:
+  # NEXTJS
+
+  frontend-svc-prod:
+    container_name: frontend-svc-prod
+
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile.prod
+      args:
+        NODEJS_VERSION: 22.14.0
+
+    restart: always
+
+    ports:
+      - ${FRONTEND_PORT:-3000}:3000
